@@ -1,20 +1,58 @@
 // References
 // - https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
+// - https://tokio.rs/tokio/tutorial/spawning
+// - https://docs.rs/eyre/0.6.0/eyre/struct.Report.html
 
-use std::error::Error;
 use std::pin::Pin;
 
+use bytes::Bytes;
+use eyre::{eyre, Result, WrapErr};
 use futures::future;
 use openssl::ssl::{SslAcceptor, SslMethod, SslMode, SslOptions};
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
-#[tokio::main]
-pub async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Hello, world server!");
-    openssl::init();
+async fn process(stream: TcpStream) -> Result<()> {
+    let acceptor = create_ssl_acceptor()?;
+    let mut stream = tokio_openssl::accept(&acceptor, stream)
+        .await
+        .wrap_err("failed to set up TLS session")?;
 
-    let server_psk_bytes: [u8; 4] = [0x1A, 0x2B, 0x3C, 0x4D];
+    let mut buf = [0; 4];
+    stream
+        .read_exact(&mut buf)
+        .await
+        .wrap_err("failed to read exactly 4 bytes")?;
+
+    if &buf != b"asdf" {
+        return Err(eyre!("Client did not write expected 'asdf' pattern"));
+    }
+
+    stream
+        .write_all(b"jkl;")
+        .await
+        .wrap_err("failed to write response")?;
+
+    // uncomment this to demonstrate lack of or support for parallelism (see tokio "spawning"
+    // tutorial).
+    // delay_for(Duration::from_secs(5)).await;
+
+    future::poll_fn(|ctx| Pin::new(&mut stream).poll_shutdown(ctx))
+        .await
+        .wrap_err("failed while waiting for shutdown")?;
+
+    println!("served a request");
+
+    Ok(())
+}
+
+fn get_psk_bytes() -> Result<Bytes> {
+    let server_psk_bytes = vec![0x1A, 0x2B, 0x3C, 0x4D];
+    Ok(Bytes::from(server_psk_bytes))
+}
+
+fn create_ssl_acceptor() -> Result<SslAcceptor> {
+    let server_psk_bytes = get_psk_bytes()?;
     let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls_server())?;
     let opts = SslOptions::ALL
         | SslOptions::NO_COMPRESSION
@@ -41,18 +79,22 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let acceptor = acceptor.build();
+    Ok(acceptor)
+}
+
+#[tokio::main]
+pub async fn main() -> Result<()> {
+    println!("Hello, world server!");
+    openssl::init();
 
     let mut listener = TcpListener::bind("127.0.0.1:4433").await?;
-    let stream = listener.accept().await?.0;
-    let mut stream = tokio_openssl::accept(&acceptor, stream).await?;
-
-    let mut buf = [0; 4];
-    stream.read_exact(&mut buf).await?;
-    assert_eq!(&buf, b"asdf");
-
-    stream.write_all(b"jkl;").await?;
-
-    future::poll_fn(|ctx| Pin::new(&mut stream).poll_shutdown(ctx)).await?;
-
-    Ok(())
+    loop {
+        let (stream, _) = listener.accept().await?;
+        tokio::spawn(async move {
+            match process(stream).await {
+                Ok(_) => {}
+                Err(e) => println!("failed to process stream: {:?}", e),
+            }
+        });
+    }
 }

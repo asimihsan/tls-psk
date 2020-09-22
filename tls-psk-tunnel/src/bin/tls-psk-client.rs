@@ -1,5 +1,11 @@
 // References
-// - https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
+//
+// "In TLSv1.3 the client selects a “group” that it will use for key exchange. OpenSSL only
+// supports ECDHE groups for this." [3]
+//
+// [1] https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
+// [2] https://stackoverflow.com/questions/58719595/how-to-do-tls-1-3-psk-using-openssl
+// [3] https://wiki.openssl.org/index.php/TLS1.3
 
 use std::error::Error;
 use std::net::ToSocketAddrs;
@@ -13,7 +19,7 @@ async fn client() -> Result<(), Box<dyn Error>> {
     let client_psk_bytes: [u8; 4] = [0x1A, 0x2B, 0x3C, 0x4D];
 
     let addr = "127.0.0.1:4433".to_socket_addrs().unwrap().next().unwrap();
-    let stream = TcpStream::connect(&addr).await.unwrap();
+    let stream = TcpStream::connect(&addr).await?;
 
     let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
     let opts = SslOptions::ALL
