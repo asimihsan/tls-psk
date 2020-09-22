@@ -4,28 +4,55 @@
 use std::error::Error;
 use std::net::ToSocketAddrs;
 
-use openssl::ssl::{SslConnector, SslMethod};
+use openssl::ssl::{SslConnector, SslMethod, SslMode, SslOptions};
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-async fn google() -> Result<(), Box<dyn Error>> {
-    let addr = "google.com:443".to_socket_addrs().unwrap().next().unwrap();
+async fn client() -> Result<(), Box<dyn Error>> {
+    let client_identity = "Client #1";
+    let client_psk_bytes: [u8; 4] = [0x1A, 0x2B, 0x3C, 0x4D];
+
+    let addr = "127.0.0.1:4433".to_socket_addrs().unwrap().next().unwrap();
     let stream = TcpStream::connect(&addr).await.unwrap();
 
-    let config = SslConnector::builder(SslMethod::tls())
-        .unwrap()
-        .build()
-        .configure()
-        .unwrap();
+    let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
+    let opts = SslOptions::ALL
+        | SslOptions::NO_COMPRESSION
+        | SslOptions::NO_SSLV2
+        | SslOptions::NO_SSLV3
+        | SslOptions::NO_TLSV1
+        | SslOptions::NO_TLSV1_1
+        | SslOptions::NO_TLSV1_2
+        | SslOptions::NO_DTLSV1
+        | SslOptions::NO_DTLSV1_2
+        | SslOptions::SINGLE_DH_USE
+        | SslOptions::SINGLE_ECDH_USE;
+    ssl_connector_builder.set_options(opts);
 
-    let mut stream = tokio_openssl::connect(config, "google.com", stream)
-        .await
-        .unwrap();
+    let mode = SslMode::AUTO_RETRY
+        | SslMode::ACCEPT_MOVING_WRITE_BUFFER
+        | SslMode::ENABLE_PARTIAL_WRITE
+        | SslMode::RELEASE_BUFFERS;
+    ssl_connector_builder.set_mode(mode);
 
-    stream.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+    ssl_connector_builder.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
+
+    ssl_connector_builder.set_psk_client_callback(
+        move |ssl_context, _identity_hint, identity_bytes, psk_bytes| {
+            identity_bytes[..client_identity.len()].clone_from_slice(client_identity.as_bytes());
+            identity_bytes[client_identity.len()] = 0;
+            psk_bytes[..client_psk_bytes.len()].clone_from_slice(&client_psk_bytes[..]);
+            Ok(client_psk_bytes.len())
+        },
+    );
+
+    let config = ssl_connector_builder.build().configure()?;
+    let mut stream = tokio_openssl::connect(config, "<no domain>", stream).await?;
+
+    stream.write_all(b"asdf").await?;
 
     let mut buf = vec![];
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream.read_to_end(&mut buf).await?;
     let response = String::from_utf8_lossy(&buf);
     let response = response.trim_end();
 
@@ -33,15 +60,10 @@ async fn google() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn dummy_call() -> Result<(), Box<dyn Error>> {
-    println!("Hello, world client!");
-    Ok(())
-}
-
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
+    println!("Hello, world client!");
     openssl::init();
-    dummy_call().await?;
-    google().await?;
+    client().await?;
     Ok(())
 }
