@@ -1,4 +1,4 @@
-## stunnel
+## stunnel TLS 1.3 external PSK proxy
 
 ### Background
 
@@ -8,12 +8,27 @@ This sets up:
 Browser --> stunnel client (127.0.0.1:1133) --> stunnel server (127.0.0.1:4433) --> Python server (127.0.0.1:8081)
 ```
 
-The stunnel client would in reality be running on the client server, but here we run everything locally.
+The stunnel client would in reality be running on the client, but here we run everything locally.
+
+For example in the real world if server A is 10.0.1.1 on host A, and server B is 10.0.2.2 on host B, it would be:
+
+```
+Host A application --> stunnel client on host A (10.0.1.1:1133) --> stunnel server on host B (10.0.2.2:4433) --> Host B server (127.0.0.1:8081)
+```
 
 ### Prerequisites
 
 ```
 brew install stunnel
+```
+
+Then put following files in same directory:
+
+```
+psks-client.txt
+psks-server.txt
+stunnel-client.conf
+stunnel-server.conf
 ```
 
 ### Steps
@@ -44,7 +59,8 @@ References
 
 ## Using Openssl to test PSK mode
 
-With all the debug logging you get a good view into how TLS PSK mode works.
+With all the debug logging you get a good view into how TLS PSK mode works. Also once you start playing around
+with the TLS PSK proxy, using these commands is a way of verifying the proxy works.
 
 Configure server:
 
