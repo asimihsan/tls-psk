@@ -9,40 +9,39 @@ use bytes::Bytes;
 use eyre::{eyre, Result, WrapErr};
 use futures::future;
 use openssl::ssl::{SslAcceptor, SslMethod, SslMode, SslOptions};
+use std::net::ToSocketAddrs;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-async fn process(stream: TcpStream) -> Result<()> {
+async fn server_process(mut input_stream: TcpStream) -> Result<()> {
+    println!("server process starting...");
+
+    println!("server setting up TLS session...");
     let acceptor = create_ssl_acceptor()?;
-    let mut stream = tokio_openssl::accept(&acceptor, stream)
+    let mut input_stream = tokio_openssl::accept(&acceptor, input_stream)
         .await
         .wrap_err("failed to set up TLS session")?;
+    println!("server set up TLS session.");
 
-    let mut buf = [0; 4];
-    stream
-        .read_exact(&mut buf)
-        .await
-        .wrap_err("failed to read exactly 4 bytes")?;
+    println!("server connecting to backend...");
+    let addr = "127.0.0.1:8081".to_socket_addrs().unwrap().next().unwrap();
+    let mut output_stream = TcpStream::connect(&addr).await?;
+    println!("server connected to backend...");
 
-    if &buf != b"asdf" {
-        return Err(eyre!("Client did not write expected 'asdf' pattern"));
-    }
+    println!("server copying...");
+    let (mut input_stream_rd, mut input_stream_wr) = tokio::io::split(input_stream);
+    let (mut output_stream_rd, mut output_stream_wr) = tokio::io::split(output_stream);
+    let handle1 = tokio::spawn(async move {
+        tokio::io::copy(&mut input_stream_rd, &mut output_stream_wr).await;
+    });
+    let handle2 =
+        tokio::spawn(
+            async move { tokio::io::copy(&mut output_stream_rd, &mut input_stream_wr).await },
+        );
+    handle1.await?;
+    handle2.await?;
 
-    stream
-        .write_all(b"jkl;")
-        .await
-        .wrap_err("failed to write response")?;
-
-    // uncomment this to demonstrate lack of or support for parallelism (see tokio "spawning"
-    // tutorial).
-    // delay_for(Duration::from_secs(5)).await;
-
-    future::poll_fn(|ctx| Pin::new(&mut stream).poll_shutdown(ctx))
-        .await
-        .wrap_err("failed while waiting for shutdown")?;
-
-    println!("served a request");
-
+    println!("server process finishing.");
     Ok(())
 }
 
@@ -53,7 +52,7 @@ fn get_psk_bytes() -> Result<Bytes> {
 
 fn create_ssl_acceptor() -> Result<SslAcceptor> {
     let server_psk_bytes = get_psk_bytes()?;
-    let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls_server())?;
+    let mut acceptor = SslAcceptor::mozilla_modern_v5(SslMethod::tls_server())?;
     let opts = SslOptions::ALL
         | SslOptions::NO_COMPRESSION
         | SslOptions::NO_SSLV2
@@ -91,9 +90,9 @@ pub async fn main() -> Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         tokio::spawn(async move {
-            match process(stream).await {
+            match server_process(stream).await {
                 Ok(_) => {}
-                Err(e) => println!("failed to process stream: {:?}", e),
+                Err(e) => println!("server failed to process stream: {:?}", e),
             }
         });
     }
