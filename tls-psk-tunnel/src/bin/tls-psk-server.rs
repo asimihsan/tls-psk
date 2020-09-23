@@ -29,8 +29,9 @@ async fn server_process(mut input_stream: TcpStream) -> Result<()> {
     println!("server connected to backend...");
 
     println!("server copying...");
+
     let (mut input_stream_rd, mut input_stream_wr) = tokio::io::split(input_stream);
-    let (mut output_stream_rd, mut output_stream_wr) = tokio::io::split(output_stream);
+    let (mut output_stream_rd, mut output_stream_wr) = output_stream.into_split();
     let handle1 = tokio::spawn(async move {
         println!("copy from input to output starting");
         tokio::io::copy(&mut input_stream_rd, &mut output_stream_wr).await;
