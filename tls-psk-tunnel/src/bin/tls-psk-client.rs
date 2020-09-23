@@ -33,7 +33,7 @@ async fn client_process(mut input_stream: TcpStream) -> Result<()> {
     println!("client TLS connected to server.");
 
     println!("client copying...");
-    let (mut input_stream_rd, mut input_stream_wr) = tokio::io::split(input_stream);
+    let (mut input_stream_rd, mut input_stream_wr) = input_stream.into_split();
     let (mut output_stream_rd, mut output_stream_wr) = tokio::io::split(output_stream);
     let handle1 = tokio::spawn(async move {
         println!("copy from input to output starting");
