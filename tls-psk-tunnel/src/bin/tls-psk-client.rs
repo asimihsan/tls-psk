@@ -36,14 +36,17 @@ async fn client_process(mut input_stream: TcpStream) -> Result<()> {
     let (mut input_stream_rd, mut input_stream_wr) = tokio::io::split(input_stream);
     let (mut output_stream_rd, mut output_stream_wr) = tokio::io::split(output_stream);
     let handle1 = tokio::spawn(async move {
+        println!("copy from input to output starting");
         tokio::io::copy(&mut input_stream_rd, &mut output_stream_wr).await;
+        println!("copy from input to output finished");
     });
-    let handle2 =
-        tokio::spawn(
-            async move { tokio::io::copy(&mut output_stream_rd, &mut input_stream_wr).await },
-        );
+    let handle2 = tokio::spawn(async move {
+        println!("copy from output to input starting");
+        tokio::io::copy(&mut output_stream_rd, &mut input_stream_wr).await;
+        println!("copy from output to input finished");
+    });
     handle1.await?;
-    handle2.await?;
+    // handle2.await?;
 
     println!("client process finishing.");
     Ok(())
