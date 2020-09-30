@@ -6,6 +6,8 @@
 // [1] https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
 // [2] https://stackoverflow.com/questions/58719595/how-to-do-tls-1-3-psk-using-openssl
 // [3] https://wiki.openssl.org/index.php/TLS1.3
+// [4] https://github.com/tokio-rs/tokio-socks5/blob/master/src/main.rs
+// [5] https://github.com/tokio-rs/tokio/blob/master/examples/proxy.rs
 
 use std::error::Error;
 use std::net::ToSocketAddrs;
@@ -14,6 +16,7 @@ use std::pin::Pin;
 use bytes::Bytes;
 use eyre::{Result, WrapErr};
 use futures::future;
+use futures::future::try_join;
 use openssl::ssl::{SslConnector, SslMethod, SslMode, SslOptions};
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -35,17 +38,21 @@ async fn client_process(mut input_stream: TcpStream) -> Result<()> {
     println!("client copying...");
     let (mut input_stream_rd, mut input_stream_wr) = input_stream.into_split();
     let (mut output_stream_rd, mut output_stream_wr) = tokio::io::split(output_stream);
+
     let handle1 = tokio::spawn(async move {
         println!("copy from input to output starting");
         tokio::io::copy(&mut input_stream_rd, &mut output_stream_wr).await;
         println!("copy from input to output finished");
+        output_stream_wr.shutdown().await
     });
     let handle2 = tokio::spawn(async move {
         println!("copy from output to input starting");
         tokio::io::copy(&mut output_stream_rd, &mut input_stream_wr).await;
         println!("copy from output to input finished");
+        input_stream_wr.shutdown().await;
     });
-    handle1.await?;
+    try_join(handle1, handle2).await?;
+    // handle1.await?;
     // handle2.await?;
 
     println!("client process finishing.");
