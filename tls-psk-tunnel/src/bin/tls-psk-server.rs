@@ -3,30 +3,32 @@
 // - https://tokio.rs/tokio/tutorial/spawning
 // - https://docs.rs/eyre/0.6.0/eyre/struct.Report.html
 
-use std::pin::Pin;
+
+
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+use std::net::ToSocketAddrs;
 
 use bytes::Bytes;
-use eyre::{eyre, Result, WrapErr};
-use futures::future;
+use eyre::{Result, WrapErr};
 use futures::future::try_join;
 use openssl::ssl::{SslAcceptor, SslMethod, SslMode, SslOptions};
-use std::net::ToSocketAddrs;
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
-async fn server_process(mut input_stream: TcpStream) -> Result<()> {
+async fn server_process(input_stream: TcpStream) -> Result<()> {
     println!("server process starting...");
 
     println!("server setting up TLS session...");
     let acceptor = create_ssl_acceptor()?;
-    let mut input_stream = tokio_openssl::accept(&acceptor, input_stream)
+    let input_stream = tokio_openssl::accept(&acceptor, input_stream)
         .await
         .wrap_err("failed to set up TLS session")?;
     println!("server set up TLS session.");
 
     println!("server connecting to backend...");
     let addr = "127.0.0.1:8081".to_socket_addrs().unwrap().next().unwrap();
-    let mut output_stream = TcpStream::connect(&addr).await?;
+    let output_stream = TcpStream::connect(&addr).await?;
     println!("server connected to backend...");
 
     println!("server copying...");
@@ -85,6 +87,16 @@ fn create_ssl_acceptor() -> Result<SslAcceptor> {
     acceptor.set_psk_server_callback(move |_ssl_context, _client_identity, psk_bytes| {
         psk_bytes[..server_psk_bytes.len()].clone_from_slice(&server_psk_bytes[..]);
         Ok(server_psk_bytes.len())
+    });
+    acceptor.set_keylog_callback(move |_ssl_context, key| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open("/private/tmp/server-tls-debug-file")
+            .unwrap();
+        if let Err(e) = writeln!(file, "{}", key) {
+            eprintln!("Couldn't write to file: {}", e);
+        }
     });
 
     let acceptor = acceptor.build();
