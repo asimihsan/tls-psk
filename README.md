@@ -1,3 +1,33 @@
+## TODO
+
+- One out of four Tokio tasks stay running forward every each request.
+
+## This project's proxy
+
+First tab
+
+```
+python -m http.server 8081 --bind 127.0.0.1
+```
+
+Second
+
+```
+cd tls-psk-tunnel
+RUST_BACKTRACE=full cargo run --bin tls-psk-server
+```
+
+Third tab
+
+```
+cd tls-psk-tunnel
+RUST_BACKTRACE=full cargo run --bin tls-psk-client
+```
+
+This sets up the exact same scenario as the stunnel scenario below.
+
+Access `127.0.0.1:1133`, e.g. `curl 127.0.0.1:1133`, then you'll reach the Python server.
+
 ## stunnel TLS 1.3 external PSK proxy
 
 ### Background
