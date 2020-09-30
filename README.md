@@ -4,6 +4,12 @@
 
 ## This project's proxy
 
+Pre-requisites
+
+```
+brew install openssl
+```
+
 First tab
 
 ```

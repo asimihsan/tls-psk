@@ -8,6 +8,7 @@ use std::pin::Pin;
 use bytes::Bytes;
 use eyre::{eyre, Result, WrapErr};
 use futures::future;
+use futures::future::try_join;
 use openssl::ssl::{SslAcceptor, SslMethod, SslMode, SslOptions};
 use std::net::ToSocketAddrs;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -36,14 +37,15 @@ async fn server_process(mut input_stream: TcpStream) -> Result<()> {
         println!("copy from input to output starting");
         tokio::io::copy(&mut input_stream_rd, &mut output_stream_wr).await;
         println!("copy from input to output finished");
+        output_stream_wr.shutdown().await
     });
     let handle2 = tokio::spawn(async move {
         println!("copy from output to input starting");
         tokio::io::copy(&mut output_stream_rd, &mut input_stream_wr).await;
         println!("copy from output to input finished");
+        input_stream_wr.shutdown().await;
     });
-    // handle1.await?;
-    handle2.await?;
+    try_join(handle1, handle2).await?;
 
     // future::poll_fn(|ctx| Pin::new(&mut input_stream).poll_shutdown(ctx))
     //     .await
