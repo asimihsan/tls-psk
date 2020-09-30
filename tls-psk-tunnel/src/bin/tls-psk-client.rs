@@ -10,18 +10,18 @@
 // [5] https://github.com/tokio-rs/tokio/blob/master/examples/proxy.rs
 
 use std::error::Error;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
 use std::net::ToSocketAddrs;
-use std::pin::Pin;
 
 use bytes::Bytes;
-use eyre::{Result, WrapErr};
-use futures::future;
+use eyre::Result;
 use futures::future::try_join;
 use openssl::ssl::{SslConnector, SslMethod, SslMode, SslOptions};
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
-async fn client_process(mut input_stream: TcpStream) -> Result<()> {
+async fn client_process(input_stream: TcpStream) -> Result<()> {
     println!("client process starting...");
 
     println!("client TCP connecting to server...");
@@ -32,7 +32,7 @@ async fn client_process(mut input_stream: TcpStream) -> Result<()> {
     println!("client TLS connecting to server...");
     let connector = create_ssl_connector()?;
     let config = connector.configure()?;
-    let mut output_stream = tokio_openssl::connect(config, "<no domain>", output_stream).await?;
+    let output_stream = tokio_openssl::connect(config, "<no domain>", output_stream).await?;
     println!("client TLS connected to server.");
 
     println!("client copying...");
@@ -90,13 +90,24 @@ fn create_ssl_connector() -> Result<SslConnector> {
     ssl_connector_builder.set_ciphersuites("TLS_AES_128_GCM_SHA256")?;
 
     ssl_connector_builder.set_psk_client_callback(
-        move |ssl_context, _identity_hint, identity_bytes, psk_bytes| {
+        move |_ssl_context, _identity_hint, identity_bytes, psk_bytes| {
             identity_bytes[..client_identity.len()].clone_from_slice(client_identity.as_bytes());
             identity_bytes[client_identity.len()] = 0;
             psk_bytes[..client_psk_bytes.len()].clone_from_slice(&client_psk_bytes[..]);
             Ok(client_psk_bytes.len())
         },
     );
+
+    ssl_connector_builder.set_keylog_callback(move |_ssl_context, key| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open("/private/tmp/client-tls-debug-file")
+            .unwrap();
+        if let Err(e) = writeln!(file, "{}", key) {
+            eprintln!("Couldn't write to file: {}", e);
+        }
+    });
 
     Ok(ssl_connector_builder.build())
 }
