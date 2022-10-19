@@ -3,7 +3,7 @@
 // "In TLSv1.3 the client selects a “group” that it will use for key exchange. OpenSSL only
 // supports ECDHE groups for this." [3]
 //
-// [1] https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
+// [1] https://github.com/sfackler/tokio-openssl/blob/master/src/test.rs
 // [2] https://stackoverflow.com/questions/58719595/how-to-do-tls-1-3-psk-using-openssl
 // [3] https://wiki.openssl.org/index.php/TLS1.3
 // [4] https://github.com/tokio-rs/tokio-socks5/blob/master/src/main.rs
@@ -13,6 +13,7 @@ use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::net::ToSocketAddrs;
+use std::pin::Pin;
 
 use bytes::Bytes;
 use eyre::Result;
@@ -20,6 +21,7 @@ use futures::future::try_join;
 use openssl::ssl::{SslConnector, SslMethod, SslMode, SslOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio_openssl::SslStream;
 
 async fn client_process(input_stream: TcpStream) -> Result<()> {
     println!("client process starting...");
@@ -31,8 +33,9 @@ async fn client_process(input_stream: TcpStream) -> Result<()> {
 
     println!("client TLS connecting to server...");
     let connector = create_ssl_connector()?;
-    let config = connector.configure()?;
-    let output_stream = tokio_openssl::connect(config, "<no domain>", output_stream).await?;
+    let ssl = connector.configure()?.into_ssl("<no domain>")?;
+    let mut output_stream = SslStream::new(ssl, output_stream)?;
+    Pin::new(&mut output_stream).connect().await?;
     println!("client TLS connected to server.");
 
     println!("client copying...");
@@ -100,6 +103,7 @@ fn create_ssl_connector() -> Result<SslConnector> {
 
     ssl_connector_builder.set_keylog_callback(move |_ssl_context, key| {
         let mut file = OpenOptions::new()
+            .create(true)
             .write(true)
             .append(true)
             .open("/private/tmp/client-tls-debug-file")

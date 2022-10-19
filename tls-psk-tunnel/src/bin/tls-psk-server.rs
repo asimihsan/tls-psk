@@ -1,29 +1,30 @@
 // References
-// - https://github.com/alexcrichton/tokio-openssl/blob/master/tests/google.rs
+// - https://github.com/sfackler/tokio-openssl/blob/master/src/test.rs
 // - https://tokio.rs/tokio/tutorial/spawning
 // - https://docs.rs/eyre/0.6.0/eyre/struct.Report.html
-
-
 
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::net::ToSocketAddrs;
+use std::pin::Pin;
 
 use bytes::Bytes;
 use eyre::{Result, WrapErr};
 use futures::future::try_join;
-use openssl::ssl::{SslAcceptor, SslMethod, SslMode, SslOptions};
+use openssl::ssl::{Ssl, SslAcceptor, SslMethod, SslMode, SslOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio_openssl::SslStream;
 
 async fn server_process(input_stream: TcpStream) -> Result<()> {
     println!("server process starting...");
 
     println!("server setting up TLS session...");
     let acceptor = create_ssl_acceptor()?;
-    let input_stream = tokio_openssl::accept(&acceptor, input_stream)
-        .await
-        .wrap_err("failed to set up TLS session")?;
+    let ssl = Ssl::new(acceptor.context())?;
+    let mut input_stream =
+        SslStream::new(ssl, input_stream).wrap_err("failed to set up TLS session")?;
+    Pin::new(&mut input_stream).accept().await?;
     println!("server set up TLS session.");
 
     println!("server connecting to backend...");
@@ -90,6 +91,7 @@ fn create_ssl_acceptor() -> Result<SslAcceptor> {
     });
     acceptor.set_keylog_callback(move |_ssl_context, key| {
         let mut file = OpenOptions::new()
+            .create(true)
             .write(true)
             .append(true)
             .open("/private/tmp/server-tls-debug-file")
@@ -108,7 +110,7 @@ pub async fn main() -> Result<()> {
     println!("Hello, world server!");
     openssl::init();
 
-    let mut listener = TcpListener::bind("127.0.0.1:4433").await?;
+    let listener = TcpListener::bind("127.0.0.1:4433").await?;
     loop {
         let (stream, _) = listener.accept().await?;
         tokio::spawn(async move {
