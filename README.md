@@ -101,13 +101,13 @@ with the TLS PSK proxy, using these commands is a way of verifying the proxy wor
 Configure server:
 
 ```
-/usr/local/opt/openssl@1.1/bin/openssl s_server -accept 4433 -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -psk 1a2b3c4d -psk_identity "Client #1" -nocert -msg -debug -security_debug_verbose
+$(brew --prefix openssl)/bin/openssl s_server -accept 4433 -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -psk 1a2b3c4d -psk_identity "Client #1" -nocert -msg -debug -security_debug_verbose -keylogfile /private/tmp/openssl-keylog-server
 ```
 
 Connect using client:
 
 ```
-/usr/local/opt/openssl@1.1/bin/openssl s_client -connect 127.0.0.1:4433 -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -psk 1a2b3c4d -psk_identity "Client #1" -msg -debug -security_debug_verbose
+$(brew --prefix openssl)/bin/openssl s_client -connect 127.0.0.1:4433 -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -psk 1a2b3c4d -psk_identity "Client #1" -msg -debug -security_debug_verbose -keylogfile /private/tmp/openssl-keylog-client
 ```
 
 You can now type text in either the server or client, press ENTER, and it appears on the other side.
