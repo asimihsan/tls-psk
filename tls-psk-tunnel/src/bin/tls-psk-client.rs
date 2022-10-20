@@ -71,7 +71,7 @@ fn create_ssl_connector() -> Result<SslConnector> {
     let client_identity = "Client #1";
     let client_psk_bytes = get_psk_bytes()?;
     let mut ssl_connector_builder = SslConnector::builder(SslMethod::tls())?;
-    let opts = SslOptions::ALL
+    let mut opts = SslOptions::ALL
         | SslOptions::NO_COMPRESSION
         | SslOptions::NO_SSLV2
         | SslOptions::NO_SSLV3
@@ -83,6 +83,7 @@ fn create_ssl_connector() -> Result<SslConnector> {
         | SslOptions::SINGLE_DH_USE
         | SslOptions::SINGLE_ECDH_USE;
     ssl_connector_builder.set_options(opts);
+    ssl_connector_builder.clear_options(SslOptions::ENABLE_MIDDLEBOX_COMPAT);
 
     let mode = SslMode::AUTO_RETRY
         | SslMode::ACCEPT_MOVING_WRITE_BUFFER

@@ -78,6 +78,7 @@ fn create_ssl_acceptor() -> Result<SslAcceptor> {
         | SslOptions::SINGLE_DH_USE
         | SslOptions::SINGLE_ECDH_USE;
     acceptor.set_options(opts);
+    acceptor.clear_options(SslOptions::ENABLE_MIDDLEBOX_COMPAT);
 
     let mode = SslMode::AUTO_RETRY
         | SslMode::ACCEPT_MOVING_WRITE_BUFFER
